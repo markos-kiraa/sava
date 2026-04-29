@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 
 BASE = "https://www.maribyrnong.vic.gov.au"
 LISTING = f"{BASE}/Building-and-Planning/Advertised-Planning-Applications"
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent
 
 HEADERS = {
     "User-Agent": (
@@ -125,20 +125,23 @@ def main() -> int:
     ranked.sort(reverse=True)
     newest_lm, detail_url = ranked[0]
 
-    folder = ROOT / slug_from(detail_url)
-    folder.mkdir(parents=True, exist_ok=True)
+    app_dir = ROOT / slug_from(detail_url)
+    raw_dir = app_dir / "raw"
+    extracted_dir = app_dir / "extracted"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    extracted_dir.mkdir(parents=True, exist_ok=True)
 
     print()
     print(f"Latest application: {detail_url}")
     print(f"Newest PDF mtime:   {newest_lm.isoformat()}")
-    print(f"Saving to folder:   {folder}")
+    print(f"App folder:         {app_dir}")
     print()
 
     pdfs_for_app = per_app[detail_url]
-    print(f"Downloading {len(pdfs_for_app)} PDF(s):")
+    print(f"Downloading {len(pdfs_for_app)} PDF(s) into raw/:")
     total_bytes = 0
     for lm, pdf_url in pdfs_for_app:
-        dest = folder / safe_filename(pdf_url)
+        dest = raw_dir / safe_filename(pdf_url)
         r = session.get(
             pdf_url,
             headers={"Sec-Fetch-Site": "same-origin", "Referer": detail_url},
@@ -148,10 +151,10 @@ def main() -> int:
         dest.write_bytes(r.content)
         size = dest.stat().st_size
         total_bytes += size
-        print(f"  {size:>10,} B  {dest.name}")
+        print(f"  {size:>10,} B  raw/{dest.name}")
         time.sleep(0.4)
 
-    print(f"\nDone. {total_bytes:,} bytes total in {folder}")
+    print(f"\nDone. {total_bytes:,} bytes total in {app_dir}")
     return 0
 
 

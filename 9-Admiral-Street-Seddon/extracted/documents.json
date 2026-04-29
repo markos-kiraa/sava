@@ -1,0 +1,59 @@
+{
+  "source_pdf": "advertised-documents-tp5120261-9-admiral-street-seddon.pdf",
+  "application_id": null,
+  "property": {
+    "address": "9 ADMIRAL STREET, SEDDON VIC 3011",
+    "title": {
+      "volume": "2323",
+      "folio": "438",
+      "lot": "Lot 1 on Title Plan 666511U"
+    }
+  },
+  "people": [
+    {
+      "role": "applicant",
+      "name": "Darren Pollock",
+      "company": null,
+      "address": "37 Walter Street, SEDDON VIC 3011",
+      "phone": "0437160077",
+      "email": "darrenpollock9@gmail.com"
+    },
+    {
+      "role": "owner",
+      "name": "REBEKAH LOUISE JARDINE",
+      "company": null,
+      "address": "9 ADMIRAL STREET SEDDON VIC 3011",
+      "phone": null,
+      "email": null
+    },
+    {
+      "role": "owner",
+      "name": "DARREN WAYNE POLLOCK",
+      "company": null,
+      "address": "9 ADMIRAL STREET SEDDON VIC 3011",
+      "phone": null,
+      "email": null
+    },
+    {
+      "role": "mortgagee",
+      "name": "COMMONWEALTH BANK OF AUSTRALIA",
+      "company": null,
+      "address": null,
+      "phone": null,
+      "email": null
+    },
+    {
+      "role": "surveyor",
+      "name": "BRANDON M WATSON",
+      "company": "360 LandSolutions",
+      "address": "PO BOX 178, HEIDELBERG, VIC, 3084",
+      "phone": null,
+      "email": "office@360ls.com.au"
+    }
+  ],
+  "contacts_found": {
+    "builder": null,
+    "architect": null,
+    "draftsperson": null
+  }
+}
