@@ -81,7 +81,7 @@ After running `python scripts/quote.py 9-Admiral-Street-Seddon`:
 | 5 | Drop per-line `$/m²` and `AUD` columns from PDF; show frame weight (kg) instead | Q5 |
 | 6 | Delete `DEFAULT_SIZE_MM`, `PLAUSIBLE_MAX_MM`, `_resolve_size`. Replace `_is_suspect` with `_review_reasons`. Items with any review reason go to a pending bucket and are not priced | Q6 |
 | 7 | Drop `render_schedule` and `render_quote` (text). Stop writing `.md` and `.txt` outputs | Q7 |
-| 8 | Slug-based quote number (`QN-{slug-upper}-V1`); valid-until = today + 30 days; sales person = `SAVA_SENDER_NAME`; render full sender block from `.env` | Q8 |
+| 8 | Quote number `QN-{first two slug segments}-V1` (e.g. `QN-9-ADMIRAL-V1` from slug `9-Admiral-Street-Seddon`); valid-until = today + 30 days; sales person = `SAVA_SENDER_NAME`; render full sender block from `.env` | Q8 |
 | 9 | Add `pillow` to dependency list to embed `capital-t-logo.webp` natively in `fpdf2` | Logo decision |
 | 10 | Adapt KB's page-37 Terms & Conditions to Capital T Partners; prepend the indicative-quotation preamble | Terms Q9 |
 | 11 | Rewrite email body to lead with the audit narrative (priced / pending counts) instead of a confident total | Email Q13 |
@@ -141,7 +141,7 @@ A renovation-scope item goes to the pending bucket if any of:
 | `frame_width_mm` is null | "Width not labelled on drawings" |
 | `frame_height_mm` is null | "Height not labelled on drawings" |
 | Either dimension < 300 mm or > 3500 mm | "Dimension out of plausible range — bbox capture suspect" |
-| Aspect ratio outside [0.25, 4.0] | "Aspect ratio implausible — bbox capture suspect" |
+| Aspect ratio outside [0.28, 3.57] | "Aspect ratio implausible — bbox capture suspect" |
 | `type == "unknown"` | "Window type not identifiable from drawing" |
 | `(kind, type)` not in CATALOGUE | "Catalogue does not yet support this product type" |
 
@@ -193,11 +193,20 @@ Header (top of PDF page 1):
 
 ```
 [ logo ]   Capital T Partners Pty Ltd                      QUOTATION
-           ABN 56 664 499 825 · ACN 664 499 825          QN-{slug}-V1
+           ABN 56 664 499 825 · ACN 664 499 825          QN-9-ADMIRAL-V1
            2/7 English St, Essendon Fields VIC 3042       Date: {today}
            +61 418 127 492 · sava@capitaltpartners.com    Valid: {today+30}
                                                           Sales: {sender}
 ```
+
+**Quote ID formula:** the first two slug segments, upper-cased, joined by `-`:
+
+```python
+def _quote_id(slug: str) -> str:
+    return "QN-" + "-".join(slug.split("-")[:2]).upper() + "-V1"
+```
+
+Single-council demo has zero collision risk. Multi-council expansion may want a different scheme.
 
 Customer block (just below):
 
@@ -303,7 +312,7 @@ Files explicitly **not** touched:
 8. Rewrite `render_pdf()`:
    - Header band (logo + entity + quote meta)
    - Customer block
-   - Per-item blocks (priced first, then pending)
+   - Per-item blocks **in label order regardless of status** (D01, W01, W02, … walk-the-list); pending badges break up the flow naturally and reflect the audit narrative
    - Totals block
    - Terms page (last)
 9. Rewrite `render_email()` to the audit-narrative template (§A4).
@@ -317,6 +326,8 @@ Files explicitly **not** touched:
 ## Appendices
 
 ### A1. Catalogue values
+
+⚠ **DRAFT — Sava to review before any real send.** The rates and energy values below are mid-point Australian-industry placeholders, not Sava-approved figures. The customer-facing PDF total is already labelled "Indicative" and bracketed by site-measure caveats, so the demo lands honestly — but a number quoted is a number implied. Lock real figures before any send.
 
 ```python
 WIND_SPECS = {"deflection": 250, "sls_pa": 400, "uls_pa": 900, "pw_pa": 150}
@@ -527,10 +538,10 @@ is required on site due to incorrect installation. A storage fee may
 apply if windows are held in our facility beyond the agreed delivery
 date.
 
-PAYMENT TERMS                       # TODO: confirm with Sava before send
-This quotation is subject to: 40% deposit on order placement; balance
-due prior to delivery. Account customers per the terms of their
-approved application. Credit Card payments incur a 1.5% surcharge.
+PAYMENT TERMS
+Payment terms will be confirmed at engagement, before any deposit is
+collected. This indicative quotation does not constitute a payment
+obligation.
 
 ACCEPTANCE
 I, _____________________________________________________ have read
@@ -630,7 +641,7 @@ Cheers,
 | 9 Admiral demo shows 5 of 6 items pending — looks empty | This is the intended audit-narrative tone. Email + PDF preamble lean into it. Verified against §2. |
 | `(kind, type)` lookup miss on a future sample (e.g. council uses a type we don't have in the catalogue) | Pending bucket catches it gracefully, with a clear reason. Adding a catalogue entry is one PR. |
 | Catalogue rates drift from market reality | Catalogue is inline; team edits one dict in `quote.py`. When a non-coder needs to tune prices, split to its own file (trigger documented in CLAUDE.md ethos). |
-| Payment-terms boilerplate (40% deposit / 1.5% CC) is wrong for Sava | Marked `# TODO: confirm with Sava` in §A2; lock before any real send. |
+| Catalogue rates in §A1 are mid-point placeholders, not Sava-approved | DRAFT note pinned at the top of §A1; customer-facing total carries "Indicative" label and the indicative-quote preamble. Sava reviews the dict before any real send. |
 
 ---
 
@@ -639,6 +650,6 @@ Cheers,
 1. All success criteria in §2 pass on the 9 Admiral sample.
 2. `docs/pipeline.md` updated to describe the new behaviour.
 3. `lessons/lessons.md` records the defaults-removed lesson.
-4. The `# TODO: confirm with Sava` markers in §A2 either resolved or
-   explicitly acknowledged as a pre-send blocker.
+4. Catalogue rates and energy values in §A1 reviewed and approved by
+   Sava (or explicitly acknowledged as a pre-send blocker).
 5. PRD reviewer confirms each row in §3 is implemented in `quote.py`.
