@@ -41,6 +41,12 @@ sava/
 ├── <address-slug>/         # one folder per scraped application
 │   ├── raw/                # downloaded PDFs (Form 2, Documents, Plans)
 │   └── extracted/          # extracted JSON per source PDF
+├── docs/                   # pipeline + design notes
+│   └── pipeline.md
+├── lessons/                # running log of what we've learned
+│   └── lessons.md
+├── notes/                  # research notes on adjacent tools / prior art
+│   └── openconstructionestimate-findings.md
 └── .env                    # GEMINI_API_KEY
 ```
 
