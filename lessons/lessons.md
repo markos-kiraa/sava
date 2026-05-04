@@ -17,3 +17,15 @@ Many residential plans (including the example in this repo) have no window sched
 ### High-DPI page rendering did not help
 
 Rendering specific pages at 350 DPI and sending them as PNG `Part`s (instead of inline PDF) made Gemini *less* accurate on cover-page contact details — small text was hallucinated rather than read. The whole-PDF inline approach is what the script uses, and is what works.
+
+### Apify `ntriqpro/blueprint-intelligence` is a dead end
+
+Tested empirically. The Actor is a thin proxy to a single-author Cloudflare tunnel (`ai.ntriq.co.kr`) that's offline ~13% of the time historically, and its output schema aggregates elements by type (`{elementType, count, details}`) — there's no per-element dimension pairing, so it can't produce a window schedule even when working. Don't reconsider.
+
+### Archicad-exported PDFs preserve vector geometry — measure deterministically
+
+Town-planning sets don't print per-window dimensions, but the source PDFs (Archicad → PDFTron) keep all text + line segments as vectors. Pipeline that works: PyMuPDF reads dimension labels (e.g. `3,130`) and matches them to nearby dimension lines to derive mm-per-point per page; Gemini returns a tight bbox per window on each rendered elevation; we filter line segments inside the bbox (5% pad, midpoint-inside, length ≤ 1.2 × bbox max-dim) and take their bounding rect. Empirical accuracy ±5–20 mm. Beats any LLM-direct measurement.
+
+### Per-elevation Gemini calls lose cross-sheet status context
+
+Switching plans extraction from one whole-PDF call to per-elevation calls gave us tight bboxes (and therefore measurable dimensions) but lost the cross-sheet comparison that previously identified `demolished` items. The new flow correctly tags `existing` and `new` per page but can't see "this exists today and isn't on the proposed sheet → demolished." Acceptable for the demo; revisit if scope-of-removal pricing matters.
