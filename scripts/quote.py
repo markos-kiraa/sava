@@ -569,11 +569,85 @@ def _draw_customer_block(pdf, project: dict, practitioner: dict,
     pdf.ln(3)
 
 
+def _draw_glyph(pdf, rx: float, ry: float, rw: float, rh: float,
+                kind: Optional[str], type_: Optional[str]) -> None:
+    """Schematic operation glyph inside the frame rect, derived from `type`
+    only (Phase 1 — no panel layout from extraction). Conventions:
+    chevron apex points to hinge side; "F" = fixed lite; horizontal arrow
+    = slide direction. Hinge side defaults to left where the drawing
+    doesn't tell us."""
+    if not type_:
+        return
+    cx = rx + rw / 2
+    cy = ry + rh / 2
+    pad = 0.6
+    pdf.set_line_width(0.15)
+    pdf.set_draw_color(110, 110, 110)
+
+    if type_ == "awning":
+        pdf.line(rx + pad, ry + rh - pad, cx, ry + pad)
+        pdf.line(rx + rw - pad, ry + rh - pad, cx, ry + pad)
+    elif type_ == "casement":
+        pdf.line(rx + rw - pad, ry + pad, rx + pad, cy)
+        pdf.line(rx + rw - pad, ry + rh - pad, rx + pad, cy)
+    elif type_ == "double_hung":
+        pdf.line(rx + pad, cy, rx + rw - pad, cy)
+    elif type_ == "louvre":
+        n = 5
+        for i in range(1, n + 1):
+            yy = ry + rh * i / (n + 1)
+            pdf.line(rx + pad * 2, yy, rx + rw - pad * 2, yy)
+    elif type_ in ("sliding", "stacker"):
+        pdf.line(cx, ry + pad, cx, ry + rh - pad)
+        ax1 = cx + pad * 2
+        ax2 = rx + rw - pad * 2
+        if ax2 > ax1 + 1:
+            pdf.line(ax1, cy, ax2, cy)
+            head = min(1.2, (ax2 - ax1) / 3)
+            pdf.line(ax2, cy, ax2 - head, cy - head / 2)
+            pdf.line(ax2, cy, ax2 - head, cy + head / 2)
+    elif type_ == "bifold":
+        n = 4
+        amp = min(rh * 0.18, 1.2)
+        for i in range(n):
+            x1 = rx + pad + (rw - 2 * pad) * i / n
+            x2 = rx + pad + (rw - 2 * pad) * (i + 1) / n
+            y1 = cy - amp if i % 2 == 0 else cy + amp
+            y2 = cy + amp if i % 2 == 0 else cy - amp
+            pdf.line(x1, y1, x2, y2)
+    elif type_ == "french":
+        pdf.line(cx, ry + pad, cx, ry + rh - pad)
+        pdf.line(rx + pad, ry + pad, cx - pad, cy)
+        pdf.line(rx + pad, ry + rh - pad, cx - pad, cy)
+        pdf.line(rx + rw - pad, ry + pad, cx + pad, cy)
+        pdf.line(rx + rw - pad, ry + rh - pad, cx + pad, cy)
+    elif type_ == "hinged":
+        pdf.line(rx + rw - pad, ry + pad, rx + pad, cy)
+        pdf.line(rx + rw - pad, ry + rh - pad, rx + pad, cy)
+    elif type_ == "fixed":
+        pdf.set_text_color(110, 110, 110)
+        _font(pdf, "B", 8)
+        pdf.set_xy(rx, cy - 2)
+        pdf.cell(rw, 4, "F", align="C")
+        pdf.set_text_color(0, 0, 0)
+    elif type_ == "highlight":
+        pdf.set_text_color(110, 110, 110)
+        _font(pdf, "B", 6)
+        pdf.set_xy(rx, cy - 1.5)
+        pdf.cell(rw, 3, "H", align="C")
+        pdf.set_text_color(0, 0, 0)
+
+    pdf.set_line_width(0.2)
+    pdf.set_draw_color(0, 0, 0)
+
+
 def _draw_thumbnail(pdf, x: float, y: float, w_mm: Optional[int],
-                    h_mm: Optional[int]) -> None:
-    """Aspect-preserving rectangle inside a fixed THUMB_CELL square.
-    For pending items (w_mm or h_mm is None) renders an empty light-grey
-    outline at full cell size with no W/H labels."""
+                    h_mm: Optional[int], kind: Optional[str] = None,
+                    type_: Optional[str] = None) -> None:
+    """Aspect-preserving rectangle inside a fixed THUMB_CELL square, with
+    a schematic operation glyph when type_ is supplied. For pending items
+    (w_mm or h_mm is None) renders an empty light-grey outline at full
+    cell size with no glyph and no W/H labels."""
     if w_mm is None or h_mm is None:
         pdf.set_draw_color(180, 180, 180)
         pdf.rect(x, y, THUMB_CELL, THUMB_CELL)
@@ -590,6 +664,7 @@ def _draw_thumbnail(pdf, x: float, y: float, w_mm: Optional[int],
     ry = y + (THUMB_CELL - rect_h) / 2
     pdf.set_draw_color(0, 0, 0)
     pdf.rect(rx, ry, rect_w, rect_h)
+    _draw_glyph(pdf, rx, ry, rect_w, rect_h, kind, type_)
 
     _font(pdf, "", 6)
     # W label under the bottom edge
@@ -651,7 +726,8 @@ def _draw_item_block(pdf, item: dict, is_pending: bool) -> None:
     thumb_y = body_top + 1
     w_mm = None if is_pending else item.get("frame_width_mm")
     h_mm = None if is_pending else item.get("frame_height_mm")
-    _draw_thumbnail(pdf, thumb_x, thumb_y, w_mm, h_mm)
+    _draw_thumbnail(pdf, thumb_x, thumb_y, w_mm, h_mm,
+                    kind=item.get("kind"), type_=item.get("type"))
 
     spec = item.get("spec")  # may be None on catalogue miss
     if not is_pending:
