@@ -21,14 +21,17 @@ Python (3.11) and packages:
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install curl_cffi beautifulsoup4 lxml google-genai pydantic python-dotenv pypdf cryptography
+pip install curl_cffi beautifulsoup4 lxml google-genai pydantic python-dotenv pypdf cryptography "pillow>=10.0" "fpdf2>=2.7"
 ```
+
+`fonts/DejaVuSans.ttf` and `fonts/DejaVuSans-Bold.ttf` are bundled in the repo so `quote.py`'s PDF renders unicode (em-dash, bullet, ⚠) cleanly via fpdf2.
 
 ## Commands
 
 ```bash
 python scripts/pull_latest.py    # scrape council, download newest app's PDFs to <slug>/raw/
 python scripts/extract.py        # Gemini extracts to <slug>/extracted/{documents,plans}.json
+python scripts/quote.py <slug>   # renders <slug>/quote/{quote.pdf, email.txt}
 ```
 
 ## Architecture
@@ -37,17 +40,22 @@ python scripts/extract.py        # Gemini extracts to <slug>/extracted/{document
 sava/
 ├── scripts/
 │   ├── pull_latest.py      # scraper (curl_cffi + bs4)
-│   └── extract.py          # Gemini extractor
+│   ├── extract.py          # Gemini extractor
+│   └── quote.py            # renderer: catalogue + pending-bucket → PDF + email
 ├── <address-slug>/         # one folder per scraped application
 │   ├── raw/                # downloaded PDFs (Form 2, Documents, Plans)
-│   └── extracted/          # extracted JSON per source PDF
+│   ├── extracted/          # extracted JSON per source PDF
+│   └── quote/              # quote.pdf + email.txt for outbound
+├── fonts/                  # DejaVuSans TTFs bundled for fpdf2 unicode
+├── capital-t-logo.webp     # Capital T Partners logo (PDF header)
 ├── docs/                   # pipeline + design notes
-│   └── pipeline.md
+│   ├── pipeline.md
+│   └── prd-quote-improvements.md
 ├── lessons/                # running log of what we've learned
 │   └── lessons.md
 ├── notes/                  # research notes on adjacent tools / prior art
 │   └── openconstructionestimate-findings.md
-└── .env                    # GEMINI_API_KEY
+└── .env                    # GEMINI_API_KEY + SAVA_SENDER_* + SAVA_LOGO_PATH
 ```
 
 ### Naming conventions

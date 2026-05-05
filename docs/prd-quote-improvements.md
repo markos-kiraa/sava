@@ -211,13 +211,22 @@ Single-council demo has zero collision risk. Multi-council expansion may want a 
 Customer block (just below):
 
 ```
-Customer:    {applicant.name}
+Customer:    {customer_name}
 Property:    {project.address}
 Project:     {project.title}
-Drawings:    {practitioner.company} (job {project.job_number})
-Phone:       {applicant.phone or "—"}
-Email:       {applicant.email or "—"}
+Drawings:    {practitioner_company} (job {project.job_number or "—"})
+Phone:       {customer_phone}
+Email:       {customer_email}
 ```
+
+**Field derivation (cascade per field, independently):**
+
+- `customer_name`: `applicant.name → owners[0].name → "—"`
+- `customer_phone`: `applicant.phone → owners[0].phone → "—"`
+- `customer_email`: `applicant.email → owners[0].email → "—"`
+- `practitioner_company`: `_humanize(practitioner.company)` (existing helper that title-cases while preserving AU state codes); `"—"` if absent.
+
+In practice owner phone/email are typically null on a Victorian planning form (only the applicant's contact is recorded), so those fields commonly fall through to `"—"` when the applicant role is missing. That's intentional and honest.
 
 ### 5.7 Per-item block layout (1–2 per page)
 
@@ -244,9 +253,28 @@ Email:       {applicant.email or "—"}
 
 **Page format:** A4 portrait, Helvetica core font, 12 mm margin all sides, ~2 per-item blocks per page. Pagination automatic via `pdf.set_auto_page_break(auto=True, margin=12)`.
 
-**Thumbnail rendering:** outer rectangle scaled into a fixed 30 × 30 mm box on the left of the block. Use `pdf.rect(x, y, 30, 30)` for the outline; W and H labels printed *outside* the rectangle (W under the bottom edge, H rotated 90° to the left edge) at `pdf.set_font("Helvetica", "", 6)`. For pending items, render the rectangle with a lighter draw colour (`pdf.set_draw_color(180, 180, 180)`) and no W/H labels; restore the default colour (`pdf.set_draw_color(0, 0, 0)`) afterwards.
+**Thumbnail rendering:** the rectangle is **aspect-preserving inside a fixed 30 × 30 mm cell** on the left of the block. The rect itself is sized so its longer side hits 30 mm and the shorter side scales proportionally:
+
+```python
+MAX_THUMB_MM = 30
+if w_mm >= h_mm:
+    rect_w, rect_h = MAX_THUMB_MM, MAX_THUMB_MM * h_mm / w_mm
+else:
+    rect_w, rect_h = MAX_THUMB_MM * w_mm / h_mm, MAX_THUMB_MM
+# centre the rect inside the 30 × 30 cell, then call:
+# pdf.rect(cell_x + (MAX_THUMB_MM - rect_w) / 2,
+#          cell_y + (MAX_THUMB_MM - rect_h) / 2, rect_w, rect_h)
+```
+
+W and H labels printed *outside* the rectangle (W under the bottom edge, H rotated 90° to the left edge) at `pdf.set_font("Helvetica", "", 6)`.
+
+**Pending items:** render an empty 30 × 30 outline at the lighter draw colour (`pdf.set_draw_color(180, 180, 180)`), no W/H labels; restore the default colour (`pdf.set_draw_color(0, 0, 0)`) afterwards.
+
+**`{type-display}` rule:** the per-item header shows `W{nn} · {kind} ({type-display}) · {sheet}` where `type-display = type.replace("_", "-").title()`. No hand-curated map. Verified renderings: `Fixed`, `Awning`, `Casement`, `Double-Hung`, `Sliding`, `Louvre`, `Highlight`, `Hinged`, `Stacker`, `French`, `Bifold`.
 
 **Field-rendering rule:** every catalogue field (`Framing`, `Finish`, `Glass`, `Hardware`, `Reveals`, `Screen`, `Wind`, `Energy`) prints on every priced item, even when the value is `"Not required"` / `"No screen"` — matches KB's layout where every slot prints. For pending items, `Dimension` and `Frame Wt` show `—`; catalogue fields still print with their normal values; the **PENDING SITE MEASURE** badge appears at the bottom of the block with the joined review reasons.
+
+**Catalogue-miss case:** when `(kind, type)` is not in `CATALOGUE` (e.g. `type == "unknown"`), the lookup returns `None` and *all* catalogue-driven rows (`Framing`, `Finish`, `Glass`, `Hardware`, `Reveals`, `Screen`, `Wind`, `Energy`) also render as `—`. The block keeps its shape — every pending block has the same height regardless of which check tripped. The PENDING badge still fires with the joined review reasons (which will include `"Catalogue does not yet support this product type"`).
 
 ### 5.8 Totals block (after the last per-item block)
 
@@ -619,7 +647,7 @@ Cheers,
 **Variable derivation:**
 
 - `{first_name}`: `applicant.name.split()[0]` if applicant present; else `owners[0].name.split()[0]` if any owner; else `"there"`.
-- `{short_address}`: `project.address.split(",")[0]` (street-line only).
+- `{short_address}`: `_humanize(project.address.split(",")[0])` (street line only, title-cased — council source is often all-caps).
 - `{address}` and `{project_title}`: pass through `_humanize()` (existing helper preserves AU state codes when title-casing).
 - `{drawings_by}`: `practitioner.company` if present; else `"the project draftsperson"`.
 - `{job_number}`: `project.job_number` or `"?"` if null.

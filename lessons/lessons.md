@@ -26,6 +26,12 @@ Tested empirically. The Actor is a thin proxy to a single-author Cloudflare tunn
 
 Town-planning sets don't print per-window dimensions, but the source PDFs (Archicad → PDFTron) keep all text + line segments as vectors. Pipeline that works: PyMuPDF reads dimension labels (e.g. `3,130`) and matches them to nearby dimension lines to derive mm-per-point per page; Gemini returns a tight bbox per window on each rendered elevation; we filter line segments inside the bbox (5% pad, midpoint-inside, length ≤ 1.2 × bbox max-dim) and take their bounding rect. Empirical accuracy ±5–20 mm. Beats any LLM-direct measurement.
 
+### No defaults — pending bucket instead
+
+The first cut of `quote.py` filled missing dimensions from a per-kind default table (`window: 1200×1500`, `door: 2400×2100`) and tagged the row `*est`. The PDF still printed a price; the `*est` flag was easy to miss in a row of similar-looking lines. In effect a typical Australian window size — never measured, never on the drawing — was masquerading as a measurement and being multiplied by the rate to produce a confident-looking subtotal. Same problem on the suspect-measurement path: out-of-range dims got swapped for the default, again silently priced. This is the same hallucinated-typical-sizes failure mode flagged in the dimensions-often-absent lesson, just one layer down the pipeline.
+
+The replacement is a pending bucket. Items with missing dims, out-of-range dims, implausible aspect ratio, unknown type, or no catalogue entry are routed out of the priced totals entirely, render with a `PENDING SITE MEASURE` badge and the failing reason(s), and never contribute a manufactured number to the subtotal. The PDF leans into the audit narrative ("priced 1 of 6, pending 5 — locks at site measure") instead of fabricating a complete price book from incomplete inputs. If a future regression brings defaults back, it has to justify why guessing a dimension is now safer than admitting the drawing didn't show one.
+
 ### Per-elevation Gemini calls lose cross-sheet status context
 
 Switching plans extraction from one whole-PDF call to per-elevation calls gave us tight bboxes (and therefore measurable dimensions) but lost the cross-sheet comparison that previously identified `demolished` items. The new flow correctly tags `existing` and `new` per page but can't see "this exists today and isn't on the proposed sheet → demolished." Acceptable for the demo; revisit if scope-of-removal pricing matters.
