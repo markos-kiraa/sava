@@ -4,9 +4,9 @@ Document explaining the pipeline of this project. Updated as the project develop
 
 ### Three-stage pipeline
 
-1. **`pull_latest.py`** — lists detail pages on the Maribyrnong listing, HEADs every PDF for `Last-Modified`, picks the application whose newest PDF is most recent, downloads all of that app's PDFs into `<slug>/raw/`. Creates `<slug>/extracted/` empty so the next stage has a home.
+1. **`pull_plans.py`** — lists every advertised-planning detail page on the Maribyrnong listing and downloads every PDF on every page into `scraped/vic/maribyrnong/<slug>/raw/`, plus an empty `extracted/` per app for stage 2. Runs 8 apps in parallel via `ThreadPoolExecutor` with per-thread `curl_cffi` sessions impersonating `chrome131` (Akamai TLS-fingerprints plain `requests`; `chrome124` also blocked). No retries — a connection drop crashes the run; recover with `clear.py` (wipes `scraped/`).
 
-2. **`extract.py`** — walks every `<slug>/raw/` folder. Six Gemini calls per app: 1× `DOCS_PROMPT` on `documents.pdf`, 1× `METADATA_PROMPT` on cover + sample drawing sheet, 4× `ELEVATION_PROMPT` (one per elevation page).
+2. **`extract.py`** — walks every `scraped/vic/maribyrnong/<slug>/`. Six Gemini calls per app: 1× `DOCS_PROMPT` on `documents.pdf`, 1× `METADATA_PROMPT` on cover + sample drawing sheet, 4× `ELEVATION_PROMPT` (one per elevation page).
    - `documents.pdf` → whole-PDF Gemini call → `documents.json` (applicant, owners, contacts).
    - `plans.pdf` → hybrid: PyMuPDF reads vector geometry + text per page; Gemini sees each elevation page (4, 5, 8, 9 in the current sample) and returns, per window/door, a tight bbox plus an internal `panels` array (`op_type`, `hinge`, null `width_mm`) describing left-to-right lights when the frame is multi-light (single-light items return `[]`). Deterministic measurement against the page's printed scale reference (e.g. `3,130` ceiling height) yields `frame_width_mm`/`frame_height_mm`; a separate vector scan inside each bbox locates vertical mullion x-positions and computes per-panel widths from them. Cross-validation drops `panels` when Gemini's count ≠ `mullion_count + 1` — same protective pattern as the dimension validation, the renderer falls back to single-pane in that case rather than render a wrong split. Output: `plans.json`.
 
@@ -19,3 +19,5 @@ Document explaining the pipeline of this project. Updated as the project develop
    - **Sender + branding** from `.env` (`SAVA_SENDER_NAME` / `_COMPANY` / `_PHONE` / `_EMAIL` / `_WEB` / `_ADDRESS` / `_ABN` / `_ACN` / `SAVA_LOGO_PATH`). Quote ID derived as `QN-{first two slug segments}-V1`. Fonts bundled at `fonts/DejaVuSans*.ttf` so unicode (em-dash, bullet, ⚠) renders cleanly in fpdf2.
 
 The three stages are intentionally decoupled — different failure modes (network/Akamai vs Gemini API vs local-only), different costs (free vs paid vs free), different cadences possible.
+
+> **Drift:** `extract.py` (`find_app_folders`) and `quote.py` (`_resolve_app_dir`) still glob the repo root for app folders, not `scraped/vic/maribyrnong/*/`. They won't see what `pull_plans.py` writes until the consumer-side glob is updated.
