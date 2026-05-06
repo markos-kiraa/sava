@@ -38,11 +38,28 @@ python scripts/quote.py <slug>   # renders <slug>/quote/{quote.pdf, email.txt}
 
 ```
 sava/
-├── scripts/                 # pipeline scripts: scrape → extract → quote (+ clear utility)
+├── scripts/
+│   ├── pull_plans.py        # scraper (curl_cffi + bs4, 8-way parallel ThreadPool)
+│   ├── clear.py             # wipes scraped/ for clean re-runs
+│   ├── extract.py           # Gemini extractor
+│   └── quote.py             # renderer: catalogue + pending-bucket → PDF + email
 ├── scraped/                 # scraper output (untracked; not in git)
+│   └── <state>/<council>/<address-slug>/
+│       ├── raw/             # downloaded PDFs (Form 2, Documents, Plans)
+│       ├── extracted/       # extracted JSON per source PDF
+│       └── quote/           # quote.pdf + email.txt for outbound
 ├── docs/                    # pipeline + design notes, PRDs
+│   ├── pipeline.md
+│   └── prds/
+│       └── 00-prd-quote-improvements.md
 ├── lessons/                 # running log of what we've learned
+│   └── lessons.md
 ├── legacy/                  # v1 demo + assets moved out of the active tree
+│   ├── archive/9-Admiral-Street-Seddon/   # full v1 single-app demo
+│   ├── fonts/               # DejaVuSans TTFs (quote.py needs repoint)
+│   ├── images/              # capital-t logos (SAVA_LOGO_PATH needs repoint)
+│   ├── notes/               # research notes on adjacent tools
+│   └── QN5375.pdf
 └── .env                     # GEMINI_API_KEY + SAVA_SENDER_* + SAVA_LOGO_PATH
 ```
 
