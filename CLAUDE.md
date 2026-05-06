@@ -38,34 +38,26 @@ python scripts/quote.py <slug>   # renders <slug>/quote/{quote.pdf, email.txt}
 
 ```
 sava/
-├── scripts/
-│   ├── pull_latest.py      # scraper (curl_cffi + bs4)
-│   ├── extract.py          # Gemini extractor
-│   └── quote.py            # renderer: catalogue + pending-bucket → PDF + email
-├── <address-slug>/         # one folder per scraped application
-│   ├── raw/                # downloaded PDFs (Form 2, Documents, Plans)
-│   ├── extracted/          # extracted JSON per source PDF
-│   └── quote/              # quote.pdf + email.txt for outbound
-├── fonts/                  # DejaVuSans TTFs bundled for fpdf2 unicode
-├── capital-t-logo.webp     # Capital T Partners logo (PDF header)
-├── docs/                   # pipeline + design notes
-│   ├── pipeline.md
-│   └── prd-quote-improvements.md
-├── lessons/                # running log of what we've learned
-│   └── lessons.md
-├── notes/                  # research notes on adjacent tools / prior art
-│   └── openconstructionestimate-findings.md
-└── .env                    # GEMINI_API_KEY + SAVA_SENDER_* + SAVA_LOGO_PATH
+├── scripts/                 # pipeline scripts: scrape → extract → quote (+ clear utility)
+├── scraped/                 # scraper output (untracked; not in git)
+├── docs/                    # pipeline + design notes, PRDs
+├── lessons/                 # running log of what we've learned
+├── legacy/                  # v1 demo + assets moved out of the active tree
+└── .env                     # GEMINI_API_KEY + SAVA_SENDER_* + SAVA_LOGO_PATH
 ```
+
+Per-folder specifics live in `<folder>/context.md`.
 
 ### Naming conventions
 
 | Thing | Pattern | Example |
 |---|---|---|
-| App folder | `[Address-Slug]/` — verbatim from the council detail-page URL's trailing segment | `9-Admiral-Street-Seddon/` |
+| State + council | Lowercase, no spaces; state is the AU postal code (`vic`, `nsw`, `qld`, `wa`, `sa`, `tas`, `act`, `nt`); council is the council's short name | `vic/maribyrnong` |
+| App folder | `scraped/<state>/<council>/<Address-Slug>/` — slug verbatim from the council detail-page URL's trailing segment | `scraped/vic/maribyrnong/9-Admiral-Street-Seddon/` |
 | Address slug | Mixed-case, hyphen-separated, as the council emits it — we never normalise it | `9-Admiral-Street-Seddon` |
-| Raw PDF | `[Address-Slug]/raw/[source-filename].pdf` — passed through from the council CDN, not renamed | `9-Admiral-Street-Seddon/raw/advertised-plans-tp5120261-9-admiral-street-seddon.pdf` |
-| Extracted JSON | `[Address-Slug]/extracted/[type].json` — canonical name per source PDF type, no date, no version | `9-Admiral-Street-Seddon/extracted/plans.json` |
+| Raw PDF | `<app-folder>/raw/[source-filename].pdf` — passed through from the council CDN, not renamed | `…/9-Admiral-Street-Seddon/raw/advertised-plans-tp5120261-9-admiral-street-seddon.pdf` |
+| Extracted JSON | `<app-folder>/extracted/[type].json` — canonical name per source PDF type, no date, no version | `…/9-Admiral-Street-Seddon/extracted/plans.json` |
+| Quote output | `<app-folder>/quote/{quote.pdf, email.txt}` — fixed names per app | `…/9-Admiral-Street-Seddon/quote/quote.pdf` |
 | Doc-type → JSON | `advertised-documents-*.pdf` → `documents.json`; `advertised-plans-*.pdf` → `plans.json` | — |
 
-The `raw/` + `extracted/` split is enforced by both scripts and is the contract that makes adding more apps trivial.
+The `raw/` + `extracted/` split is the contract that makes adding more apps trivial. `pull_plans.py` writes to this layout today; `extract.py` (`find_app_folders`) and `quote.py` (`_resolve_app_dir`) still glob the repo root and need their globs updated to walk `scraped/<state>/<council>/<slug>/` before consuming `pull_plans.py` output end-to-end.
