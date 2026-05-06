@@ -113,6 +113,19 @@ class Practitioner(BaseModel):
     abn: Optional[str] = None
 
 
+Hinge = Literal["top", "left", "right", "bottom"]
+
+
+class Panel(BaseModel):
+    """One light/sash inside a multi-panel frame. Order is left-to-right
+    for horizontally-split frames, top-to-bottom for vertically-split.
+    `width_mm` is filled deterministically from mullion measurement; Gemini
+    is instructed to leave it null."""
+    op_type: WindowType = "unknown"
+    hinge: Optional[Hinge] = None
+    width_mm: Optional[int] = None
+
+
 class Window(BaseModel):
     label: Optional[str] = None
     kind: WindowKind = "window"
@@ -122,6 +135,11 @@ class Window(BaseModel):
     # measure for rough-opening conversion.
     frame_width_mm: Optional[int] = None
     frame_height_mm: Optional[int] = None
+    # Internal panel layout (left-to-right). Empty list = single-light item.
+    # Populated only when Gemini's panel count matches the deterministic
+    # mullion count from PDF vector geometry; on mismatch we drop panels
+    # rather than render a wrong split (same protective pattern as dims).
+    panels: list[Panel] = []
     sheet: Optional[str] = None
     notes: Optional[str] = None
 
@@ -358,6 +376,58 @@ def measure_rect_in_region(
     return (width_mm, height_mm)
 
 
+def measure_mullions_in_region(
+    page: fitz.Page,
+    region_pt: tuple[float, float, float, float],
+    scale_mm_per_pt: float,
+) -> list[int]:
+    """Find vertical mullion lines INSIDE a frame bbox, return their
+    x-offsets in mm from the bbox's left edge (sorted, deduplicated).
+
+    A mullion is a vertical line segment whose midpoint sits strictly
+    inside the bbox (not at the left/right edge), spans ≥75% of bbox
+    height, and isn't a duplicate of another mullion within ~3pt.
+
+    Used to cross-check Gemini's `panels` count: len(mullions) + 1 is
+    the deterministic number of panels. On mismatch we drop panels and
+    fall back to single-pane rendering.
+    """
+    x1, y1, x2, y2 = region_pt
+    bbox_w = x2 - x1
+    bbox_h = y2 - y1
+    if bbox_w <= 0 or bbox_h <= 0:
+        return []
+    edge_margin = max(2.0, bbox_w * 0.05)
+    min_seg_h = bbox_h * 0.75
+
+    raw_xs: list[float] = []
+    for (p1, p2, length, orient) in _line_segments(page):
+        if orient != "v":
+            continue
+        seg_h = abs(p2[1] - p1[1])
+        if seg_h < min_seg_h:
+            continue
+        mx = (p1[0] + p2[0]) / 2
+        my = (p1[1] + p2[1]) / 2
+        if not (x1 + edge_margin <= mx <= x2 - edge_margin):
+            continue
+        if not (y1 <= my <= y2):
+            continue
+        raw_xs.append(mx)
+
+    if not raw_xs:
+        return []
+
+    # Deduplicate vector lines that share an x-position (within 3pt).
+    raw_xs.sort()
+    clustered: list[float] = [raw_xs[0]]
+    for x in raw_xs[1:]:
+        if x - clustered[-1] > 3.0:
+            clustered.append(x)
+
+    return [round((x - x1) * scale_mm_per_pt) for x in clustered]
+
+
 def render_page_jpeg(page: fitz.Page, dpi: int = 200) -> bytes:
     matrix = fitz.Matrix(dpi / 72, dpi / 72)
     return page.get_pixmap(matrix=matrix).tobytes("jpeg")
@@ -394,6 +464,7 @@ class ElevationItem(BaseModel):
     notes: str = ""
     sheet: Optional[str] = None
     bbox_norm: list[int] = Field(default_factory=list)
+    panels: list[Panel] = Field(default_factory=list)
 
 
 class ElevationExtraction(BaseModel):
@@ -431,6 +502,24 @@ For every WINDOW and GLAZED DOOR on this sheet, return one item with:
   The box should TIGHTLY enclose the visible frame outline — do NOT
   include surrounding wall, eaves, sill detail, or trim. Tighter is
   better; loose bboxes cause measurement errors downstream.
+- panels: ARRAY describing the lights/panels INSIDE the frame, ordered
+  LEFT-TO-RIGHT. A "panel" is one piece of glass separated from its
+  neighbour by a vertical mullion. Each panel object:
+    * op_type: ONE OF the same window/door types listed above. Use
+      "fixed" for a non-operable lite (typically marked "F" on the
+      drawing or shown without any opening symbol). Use the relevant
+      operable type ("awning", "casement", etc.) when the panel shows
+      an opening symbol (chevron, etc.). Use "unknown" only if the
+      panel's operation isn't drawn.
+    * hinge: "top", "left", "right", or "bottom" for the side the panel
+      hinges on. For an awning the hinge is "top"; for a casement it's
+      the side the chevron apex points to. Use null if unclear or
+      irrelevant (e.g. fixed lites).
+    * width_mm: ALWAYS leave null. Measurement is done from drawing
+      geometry — your width guesses will be discarded.
+  For SINGLE-LIGHT items (one piece of glass, no internal mullions,
+  no fixed-+-operable combinations), return an EMPTY array []. Do not
+  return a single-element panels array for single-light items.
 
 EXCLUDE:
 - Solid (non-glazed) doors.
@@ -531,6 +620,34 @@ def extract_plans(client: genai.Client, pdf_path: Path) -> PlansExtraction:
                 measure_rect_in_region(page, region_pt, scale)
                 if region_pt is not None else None
             )
+
+            # Cross-validate Gemini's panel count against deterministic
+            # mullion measurement. Replace Gemini's null widths with
+            # the deterministic widths from mullion x-positions.
+            panels: list[Panel] = []
+            if region_pt is not None and dims is not None and item.panels:
+                mullions_mm = measure_mullions_in_region(
+                    page, region_pt, scale,
+                )
+                expected = len(mullions_mm) + 1
+                if len(item.panels) == expected and expected >= 2:
+                    boundaries = [0, *mullions_mm, dims[0]]
+                    panels = [
+                        Panel(
+                            op_type=p.op_type,
+                            hinge=p.hinge,
+                            width_mm=boundaries[i + 1] - boundaries[i],
+                        )
+                        for i, p in enumerate(item.panels)
+                    ]
+                else:
+                    print(
+                        f"  warn: panel mismatch on {item.sheet} "
+                        f"({len(item.panels)} from gemini vs {expected} "
+                        f"from geometry); dropping panels",
+                        file=sys.stderr,
+                    )
+
             windows.append(Window(
                 label=None,
                 kind=item.kind,
@@ -538,6 +655,7 @@ def extract_plans(client: genai.Client, pdf_path: Path) -> PlansExtraction:
                 status=item.status,
                 frame_width_mm=dims[0] if dims else None,
                 frame_height_mm=dims[1] if dims else None,
+                panels=panels,
                 sheet=item.sheet,
                 notes=item.notes,
             ))

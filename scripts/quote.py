@@ -569,13 +569,12 @@ def _draw_customer_block(pdf, project: dict, practitioner: dict,
     pdf.ln(3)
 
 
-def _draw_glyph(pdf, rx: float, ry: float, rw: float, rh: float,
-                kind: Optional[str], type_: Optional[str]) -> None:
-    """Schematic operation glyph inside the frame rect, derived from `type`
-    only (Phase 1 — no panel layout from extraction). Conventions:
-    chevron apex points to hinge side; "F" = fixed lite; horizontal arrow
-    = slide direction. Hinge side defaults to left where the drawing
-    doesn't tell us."""
+def _draw_pane_glyph(pdf, rx: float, ry: float, rw: float, rh: float,
+                     type_: Optional[str],
+                     hinge: Optional[str] = None) -> None:
+    """One pane's operation glyph (chevron / F / arrow / etc.) inside the
+    given sub-rect. Used both for single-light items (full frame rect) and
+    for each panel of a multi-light item (sub-rect between mullions)."""
     if not type_:
         return
     cx = rx + rw / 2
@@ -584,12 +583,27 @@ def _draw_glyph(pdf, rx: float, ry: float, rw: float, rh: float,
     pdf.set_line_width(0.15)
     pdf.set_draw_color(110, 110, 110)
 
+    def _chevron(h: Optional[str]) -> None:
+        # Apex sits on the hinge side, base on the opposite side.
+        if h == "bottom":
+            ax, ay = cx, ry + rh - pad
+            base = ((rx + pad, ry + pad), (rx + rw - pad, ry + pad))
+        elif h == "right":
+            ax, ay = rx + rw - pad, cy
+            base = ((rx + pad, ry + pad), (rx + pad, ry + rh - pad))
+        elif h == "left":
+            ax, ay = rx + pad, cy
+            base = ((rx + rw - pad, ry + pad), (rx + rw - pad, ry + rh - pad))
+        else:  # top (default for awning / unspecified)
+            ax, ay = cx, ry + pad
+            base = ((rx + pad, ry + rh - pad), (rx + rw - pad, ry + rh - pad))
+        for bx, by in base:
+            pdf.line(bx, by, ax, ay)
+
     if type_ == "awning":
-        pdf.line(rx + pad, ry + rh - pad, cx, ry + pad)
-        pdf.line(rx + rw - pad, ry + rh - pad, cx, ry + pad)
+        _chevron(hinge or "top")
     elif type_ == "casement":
-        pdf.line(rx + rw - pad, ry + pad, rx + pad, cy)
-        pdf.line(rx + rw - pad, ry + rh - pad, rx + pad, cy)
+        _chevron(hinge or "left")
     elif type_ == "double_hung":
         pdf.line(rx + pad, cy, rx + rw - pad, cy)
     elif type_ == "louvre":
@@ -622,8 +636,7 @@ def _draw_glyph(pdf, rx: float, ry: float, rw: float, rh: float,
         pdf.line(rx + rw - pad, ry + pad, cx + pad, cy)
         pdf.line(rx + rw - pad, ry + rh - pad, cx + pad, cy)
     elif type_ == "hinged":
-        pdf.line(rx + rw - pad, ry + pad, rx + pad, cy)
-        pdf.line(rx + rw - pad, ry + rh - pad, rx + pad, cy)
+        _chevron(hinge or "left")
     elif type_ == "fixed":
         pdf.set_text_color(110, 110, 110)
         _font(pdf, "B", 8)
@@ -641,13 +654,42 @@ def _draw_glyph(pdf, rx: float, ry: float, rw: float, rh: float,
     pdf.set_draw_color(0, 0, 0)
 
 
+def _draw_glyph(pdf, rx: float, ry: float, rw: float, rh: float,
+                type_: Optional[str],
+                panels: Optional[list[dict]] = None) -> None:
+    """Dispatch: multi-panel rendering when `panels` is non-empty (with
+    mullion lines between sub-panes), single-pane rendering otherwise."""
+    valid_panels = [
+        p for p in (panels or [])
+        if isinstance(p, dict) and p.get("width_mm")
+    ]
+    if len(valid_panels) >= 2:
+        total_mm = sum(p["width_mm"] for p in valid_panels)
+        cur_x = rx
+        for i, p in enumerate(valid_panels):
+            sub_w = rw * (p["width_mm"] / total_mm)
+            _draw_pane_glyph(
+                pdf, cur_x, ry, sub_w, rh,
+                p.get("op_type"), p.get("hinge"),
+            )
+            cur_x += sub_w
+            if i < len(valid_panels) - 1:
+                pdf.set_line_width(0.2)
+                pdf.set_draw_color(0, 0, 0)
+                pdf.line(cur_x, ry, cur_x, ry + rh)
+        return
+    _draw_pane_glyph(pdf, rx, ry, rw, rh, type_)
+
+
 def _draw_thumbnail(pdf, x: float, y: float, w_mm: Optional[int],
                     h_mm: Optional[int], kind: Optional[str] = None,
-                    type_: Optional[str] = None) -> None:
+                    type_: Optional[str] = None,
+                    panels: Optional[list[dict]] = None) -> None:
     """Aspect-preserving rectangle inside a fixed THUMB_CELL square, with
-    a schematic operation glyph when type_ is supplied. For pending items
-    (w_mm or h_mm is None) renders an empty light-grey outline at full
-    cell size with no glyph and no W/H labels."""
+    schematic operation glyph(s) inside. Multi-light items split into
+    sub-panes by `panels`. For pending items (w_mm or h_mm is None)
+    renders an empty light-grey outline at full cell size with no
+    glyph and no W/H labels."""
     if w_mm is None or h_mm is None:
         pdf.set_draw_color(180, 180, 180)
         pdf.rect(x, y, THUMB_CELL, THUMB_CELL)
@@ -664,7 +706,7 @@ def _draw_thumbnail(pdf, x: float, y: float, w_mm: Optional[int],
     ry = y + (THUMB_CELL - rect_h) / 2
     pdf.set_draw_color(0, 0, 0)
     pdf.rect(rx, ry, rect_w, rect_h)
-    _draw_glyph(pdf, rx, ry, rect_w, rect_h, kind, type_)
+    _draw_glyph(pdf, rx, ry, rect_w, rect_h, type_, panels)
 
     _font(pdf, "", 6)
     # W label under the bottom edge
@@ -727,7 +769,8 @@ def _draw_item_block(pdf, item: dict, is_pending: bool) -> None:
     w_mm = None if is_pending else item.get("frame_width_mm")
     h_mm = None if is_pending else item.get("frame_height_mm")
     _draw_thumbnail(pdf, thumb_x, thumb_y, w_mm, h_mm,
-                    kind=item.get("kind"), type_=item.get("type"))
+                    kind=item.get("kind"), type_=item.get("type"),
+                    panels=item.get("panels"))
 
     spec = item.get("spec")  # may be None on catalogue miss
     if not is_pending:
